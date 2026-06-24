@@ -9,10 +9,21 @@ const DEFAULT_CONFIG = `{
   "time_limit": 60
 }`;
 
+type ApiResponse = {
+  schema_validation: {
+    valid: boolean;
+    errors: string[];
+  };
+  llm_feedback: {
+    analysis: string;
+    suggested_actions: string[];
+  } | string | null;
+};
+
 export default function Home() {
   const [input, setInput] = useState(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleAnalyze() {
@@ -47,42 +58,41 @@ export default function Home() {
   }
 
   return (
-    <main style={styles.container}>
-      <h1 style={styles.title}>Game Config Validator</h1>
+    <main className="homePage">
+      <h1 className="homeTitle">Game Config Validator</h1>
 
-      <p style={styles.subtitle}>
+      <p className="homeSubtitle">
         Paste a configuration JSON and analyze balance & design risks.
       </p>
 
-      <div style={styles.grid}>
-        {/* INPUT */}
-        <div style={styles.card}>
+      <div className="homeGrid">
+        <div className="homeCardConfig">
           <h2>Configuration</h2>
 
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            style={styles.textarea}
+            className="homeTextarea"
           />
 
           <button
             onClick={handleAnalyze}
             disabled={loading}
-            style={styles.button}
+            className="homeButton"
           >
             {loading ? "Validating..." : "Validate"}
           </button>
 
-          {error && <p style={styles.error}>{error}</p>}
+          {error && <p className="homeError">{error}</p>}
         </div>
 
-        <div style={styles.card}>
+        <div className="homeCard">
           <h2>Result</h2>
 
-          {!result && <p>No result yet</p>}
+          {!result && <p className="homeEmptyState">No result yet</p>}
 
           {result && (
-            <pre style={styles.pre}>
+            <pre className="homeAnalysisOutput">
               {JSON.stringify(result, null, 2)}
             </pre>
           )}
@@ -91,56 +101,3 @@ export default function Home() {
     </main>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: 1100,
-    margin: "40px auto",
-    padding: 20,
-    fontFamily: "Arial, sans-serif",
-  },
-  title: {
-    fontSize: 28,
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: "#555",
-    marginBottom: 20,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 20,
-  },
-  card: {
-    border: "1px solid #ddd",
-    borderRadius: 8,
-    padding: 16,
-  },
-  textarea: {
-    width: "100%",
-    height: 250,
-    fontFamily: "monospace",
-    fontSize: 13,
-    padding: 10,
-    marginBottom: 10,
-  },
-  button: {
-    padding: "10px 14px",
-    cursor: "pointer",
-    backgroundColor: "#111",
-    color: "#fff",
-    border: "none",
-    borderRadius: 6,
-  },
-  error: {
-    color: "red",
-    marginTop: 10,
-  },
-  pre: {
-    background: "#f6f6f6",
-    padding: 12,
-    overflowX: "auto",
-    fontSize: 12,
-  },
-};

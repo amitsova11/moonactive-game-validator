@@ -1,13 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
+import { toFriendlyErrorFeedback, type LlmFeedback } from "./error";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
-
-export type LlmFeedback = {
-  analysis: string;
-  suggested_actions: string[];
-};
 
 function parseJsonObject(text: string): unknown {
   const fencedJson = text.match(/```json\s*([\s\S]*?)```/i);
@@ -51,40 +47,97 @@ function toLlmFeedback(payload: unknown): LlmFeedback {
 
 export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
   const prompt = `
-    You are a senior game designer.
+    You are a senior game economy and level design analyst.
 
-    Analyze the following configuration.
+    Your task is to evaluate whether a game level's difficulty, reward, and time limit are well balanced relative to each other and to typical design patterns.
 
-    Fields:
-    -level — the game level number, representing progression (higher levels are harder).
-    -difficulty — a string indicating the level's difficulty, e.g., “easy”, “medium”, or “hard”.
-    -reward — the amount of in-game currency or points granted for completing the level.
-    -time_limit — the time (in seconds) allocated to complete the level. This controls pacing and challenge.
+    You must reason comparatively, not apply strict numeric rules.
 
-
-    Reference Balancing Ranges:
-
-    Easy levels generally have rewards in the range of 100–500 and time limits of at least 30 seconds.
-    Medium levels typically offer rewards between 500–2000 with time limits around 20–60 seconds.
-    Hard levels usually grant rewards of 2000–5000 with tighter time limits, often between 10–30 seconds.
-
-
-    Evaluate:
-    - reward balance
-    - level consistency 
-    - time balance
-    - reward consistency
-
-    Provide your analysis and suggest any adjustments to improve the game experience.
-
-    Return ONLY valid JSON:
+    You will receive a config object of type:
 
     {
-      "analysis": "...",
-      "suggested_actions": [
-        "..."
-      ]
+      "level": number,
+      "difficulty": "easy | medium | hard",
+      "reward": number,
+      "time_limit": number
     }
+
+    - Fields:
+      - level — the game level number, representing progression (higher levels are harder).
+      - difficulty — a string indicating the level's difficulty, e.g., “easy”, “medium”, or “hard”.
+      - reward — the amount of in-game currency or points granted for completing the level.
+      - time_limit — the time (in seconds) allocated to complete the level. This controls pacing and challenge.
+
+
+    - Design Principles (Reference Patterns Only)
+
+      Use these as soft expectations, not hard rules:
+
+      Easy:
+        Lower reward
+        More generous time
+        Low pressure gameplay
+
+      Medium:
+        Moderate reward
+        Balanced time pressure
+        Some constraint but fair
+
+      Hard:
+        High reward
+        Tight time constraints
+        High pressure / optimization required
+
+      Key relationships:
+        Higher difficulty → reward should generally increase
+        Higher difficulty → time limit should generally decrease
+        Reward and time should jointly reflect “effort vs payoff”
+
+    - Evaluation Tasks
+
+    For each level, you must:
+
+    1. Internal Consistency Check
+
+      Assess whether:
+
+      Reward matches difficulty expectation
+      Time pressure matches difficulty expectation
+      Reward/time ratio feels coherent
+
+    2. Relative Reasoning
+
+      Compare the level against expected patterns for its difficulty tier:
+
+      Is it under-rewarded or over-rewarded?
+      Is time too forgiving or too strict?
+      Does it weaken or exaggerate intended difficulty?
+
+    3. Imbalance Detection
+
+      Identify specific issues such as:
+      Under-rewarded hard level
+      Over-rewarded easy level
+      Too much time reducing difficulty
+      Too little time making medium feel unfair
+      Reward/time mismatch (e.g. high reward + very generous time on hard level)
+
+      Provide your analysis and suggest any adjustments to improve the game experience.
+
+      Return ONLY valid JSON:
+
+      {
+        "analysis": "...",
+        "suggested_actions": [
+          "..."
+        ]
+      }
+
+      where analysis is a one sentence of your evaluation, and suggested_actions is an array of up to 3 specific recommendations for improving the level's balance.
+
+
+      If you think the configuration is well balanced, return "no actions needed" in the suggested_actions array.
+
 
     Configuration:
     ${JSON.stringify(config, null, 2)}
@@ -105,12 +158,8 @@ export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
         suggested_actions: [],
       };
     }
-  }
-  catch (error) {
+  } catch (error) {
     console.error("Error during LLM analysis:", error);
-    return {
-      analysis: "An error occurred while analyzing the configuration.",
-      suggested_actions: [],
-    };
+    return toFriendlyErrorFeedback(error);
   }
 }
