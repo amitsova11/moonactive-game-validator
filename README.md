@@ -72,9 +72,24 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4o-mini
 ```
 
+### Option 3: Local Model (OpenAI-compatible endpoint, e.g. Ollama)
+
+```bash
+LLM_PROVIDER=local
+LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+LOCAL_LLM_MODEL=llama3.1
+```
+
+Optional:
+
+```bash
+LOCAL_LLM_API_KEY=your_local_provider_key_if_needed
+```
+
 Notes:
 - If `LLM_PROVIDER` is not set, the app defaults to Gemini.
 - If `LLM_PROVIDER` is not set and only `OPENAI_API_KEY` is configured, the app uses OpenAI automatically.
+- If `LLM_PROVIDER` is not set and only `LOCAL_LLM_BASE_URL` is configured, the app uses the local model automatically.
 
 Notes:
 - Do not commit `.env.local`.

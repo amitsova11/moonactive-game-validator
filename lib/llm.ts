@@ -2,13 +2,19 @@ import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { toFriendlyErrorFeedback, type LlmFeedback } from "./error";
 
-type LlmProvider = "gemini" | "openai";
+type LlmProvider = "gemini" | "openai" | "local";
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_LOCAL_MODEL = "llama3.1";
+const DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1";
 
 function resolveProvider(): LlmProvider {
   const configuredProvider = process.env.LLM_PROVIDER?.toLowerCase();
+  if (configuredProvider === "local") {
+    return "local";
+  }
+
   if (configuredProvider === "openai") {
     return "openai";
   }
@@ -19,6 +25,10 @@ function resolveProvider(): LlmProvider {
 
   if (process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
     return "openai";
+  }
+
+  if (process.env.LOCAL_LLM_BASE_URL && !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
+    return "local";
   }
 
   return "gemini";
@@ -55,6 +65,26 @@ async function generateWithOpenAI(prompt: string): Promise<string> {
   const content = completion.choices[0]?.message?.content;
   if (!content) {
     throw new Error("OpenAI response did not include content.");
+  }
+
+  return content;
+}
+
+async function generateWithLocalModel(prompt: string): Promise<string> {
+  const client = new OpenAI({
+    apiKey: process.env.LOCAL_LLM_API_KEY || "local-model",
+    baseURL: process.env.LOCAL_LLM_BASE_URL || DEFAULT_LOCAL_BASE_URL,
+  });
+
+  const completion = await client.chat.completions.create({
+    model: process.env.LOCAL_LLM_MODEL || DEFAULT_LOCAL_MODEL,
+    temperature: 0.2,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("Local model response did not include content.");
   }
 
   return content;
@@ -202,7 +232,9 @@ export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
     const provider = resolveProvider();
     const rawText = provider === "openai"
       ? await generateWithOpenAI(prompt)
-      : await generateWithGemini(prompt);
+      : provider === "local"
+        ? await generateWithLocalModel(prompt)
+        : await generateWithGemini(prompt);
 
     try {
       return toLlmFeedback(parseJsonObject(rawText));
