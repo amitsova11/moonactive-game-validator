@@ -3,7 +3,7 @@ import { gameConfigSchema } from "./schema";
 
 const ajv = new Ajv({
   allErrors: true,
-  strict: false, 
+  strict: true, // Strict mode enforces that all schema keywords are understood
 });
 
 const validateFn = ajv.compile(gameConfigSchema);
@@ -19,7 +19,6 @@ export function validateConfig(data: unknown): ValidationResult {
 
   const errors = validateFn.errors ?? [];
 
-  // Human-readable error messages (useful for UI + debugging)
   const errorMessages = errors.map((err) => {
     const field = err.instancePath ? err.instancePath.replace("/", "") : "root";
     return `${field} ${err.message}`;

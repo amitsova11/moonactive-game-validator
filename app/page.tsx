@@ -57,6 +57,18 @@ export default function Home() {
     }
   }
 
+  // Type guard to check if llm_feedback is a valid feedback object
+  const isValidFeedback = (fb: unknown): fb is { analysis: string; suggested_actions: string[] } => {
+    return (
+      typeof fb === "object" &&
+      fb !== null &&
+      "analysis" in fb &&
+      "suggested_actions" in fb &&
+      typeof (fb as { analysis: unknown }).analysis === "string" &&
+      Array.isArray((fb as { suggested_actions: unknown }).suggested_actions)
+    );
+  };
+
   return (
     <main className="homePage">
       <h1 className="homeTitle">Game Config Validator</h1>

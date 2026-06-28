@@ -11,27 +11,51 @@ const DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1";
 
 function resolveProvider(): LlmProvider {
   const configuredProvider = process.env.LLM_PROVIDER?.toLowerCase();
+
+  // Explicit provider configuration takes precedence
   if (configuredProvider === "local") {
+    if (!process.env.LOCAL_LLM_BASE_URL) {
+      throw new Error(
+        "LOCAL_LLM_BASE_URL is not configured but LLM_PROVIDER is set to 'local'.",
+      );
+    }
     return "local";
   }
 
   if (configuredProvider === "openai") {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error(
+        "OPENAI_API_KEY is not configured but LLM_PROVIDER is set to 'openai'.",
+      );
+    }
     return "openai";
   }
 
   if (configuredProvider === "gemini") {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error(
+        "GEMINI_API_KEY is not configured but LLM_PROVIDER is set to 'gemini'.",
+      );
+    }
     return "gemini";
   }
 
-  if (process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
+  // Fallback: auto-detect based on available keys
+    if (process.env.GEMINI_API_KEY) {
+    return "gemini";
+  }
+  
+  if (process.env.OPENAI_API_KEY) {
     return "openai";
   }
 
-  if (process.env.LOCAL_LLM_BASE_URL && !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
+  if (process.env.LOCAL_LLM_BASE_URL) {
     return "local";
   }
 
-  return "gemini";
+  throw new Error(
+    "No LLM provider is configured. Set LLM_PROVIDER env var or provide API keys for OpenAI/Gemini or LOCAL_LLM_BASE_URL.",
+  );
 }
 
 async function generateWithGemini(prompt: string): Promise<string> {
@@ -41,12 +65,25 @@ async function generateWithGemini(prompt: string): Promise<string> {
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
-    contents: prompt,
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("Gemini request timed out after 30 seconds")), 30000);
   });
 
-  return response.text ?? "{}";
+  try {
+    const response = await Promise.race([
+      ai.models.generateContent({
+        model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+        contents: prompt,
+      }),
+      timeoutPromise,
+    ]);
+    return response.text ?? "{}";
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("timed out")) {
+      throw error;
+    }
+    throw error;
+  }
 }
 
 async function generateWithOpenAI(prompt: string): Promise<string> {
@@ -55,7 +92,7 @@ async function generateWithOpenAI(prompt: string): Promise<string> {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, timeout: 30000 });
   const completion = await client.chat.completions.create({
     model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
     temperature: 0.2,
@@ -74,6 +111,7 @@ async function generateWithLocalModel(prompt: string): Promise<string> {
   const client = new OpenAI({
     apiKey: process.env.LOCAL_LLM_API_KEY || "local-model",
     baseURL: process.env.LOCAL_LLM_BASE_URL || DEFAULT_LOCAL_BASE_URL,
+    timeout: 30000,
   });
 
   const completion = await client.chat.completions.create({
@@ -134,7 +172,7 @@ export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
   const prompt = `
     You are a senior game economy and level design analyst.
 
-    Your task is to evaluate whether a game level's difficulty, reward, and time limit are well balanced relative to each other and to typical design patterns.
+    Your task is to evaluate whether a game config's level, difficulty, reward, and time limit are well balanced relative to each other and to typical design patterns.
 
     You must reason comparatively, not apply strict numeric rules.
 
@@ -159,21 +197,26 @@ export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
       Use these as soft expectations, not hard rules:
 
       Easy:
-        Lower reward
-        More generous time
+        Lower levels
+        Lower reward (100–500)
+        More generous time (at least 30 seconds)
         Low pressure gameplay
 
       Medium:
+        Moderate levels
         Moderate reward
         Balanced time pressure
         Some constraint but fair
 
       Hard:
-        High reward
+        Higher levels
+        High reward (2000–5000)
         Tight time constraints
-        High pressure / optimization required
+        High pressure 
 
       Key relationships:
+        Higher level → higher difficulty, lower time, higher reward
+        Lower level → lower difficulty, higher time, lower reward
         Higher difficulty → reward should generally increase
         Higher difficulty → time limit should generally decrease
         Reward and time should jointly reflect “effort vs payoff”
@@ -182,30 +225,34 @@ export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
 
     For each level, you must:
 
-    1. Internal Consistency Check
+      1. Internal Consistency Check
 
-      Assess whether:
+          Assess whether:
+          Reward, time limit, and difficulty are coherent with the level number.
+          Reward matches difficulty expectation
+          Time pressure matches difficulty expectation
+          Reward/time ratio feels coherent
 
-      Reward matches difficulty expectation
-      Time pressure matches difficulty expectation
-      Reward/time ratio feels coherent
+      2. Relative Reasoning
 
-    2. Relative Reasoning
+          Compare the level against expected patterns for the level's number and difficulty. Ask yourself:
 
-      Compare the level against expected patterns for its difficulty tier:
+          Is it under-rewarded or over-rewarded?
+          Is time too forgiving or too strict?
+          Does it weaken or exaggerate intended difficulty?
 
-      Is it under-rewarded or over-rewarded?
-      Is time too forgiving or too strict?
-      Does it weaken or exaggerate intended difficulty?
+      3. Imbalance Detection
 
-    3. Imbalance Detection
-
-      Identify specific issues such as:
-      Under-rewarded hard level
-      Over-rewarded easy level
-      Too much time reducing difficulty
-      Too little time making medium feel unfair
-      Reward/time mismatch (e.g. high reward + very generous time on hard level)
+          Identify specific issues such as:
+          Under-rewarded hard level
+          Over-rewarded easy level
+          Too much time reducing difficulty
+          Too little time making medium feel unfair
+          Reward/time mismatch (e.g. high reward + very generous time on hard level)
+          A high level with low difficulty or low reward or high time limit
+          A lower level with high difficulty or high reward or low time limit
+          
+    - Output Format
 
       Provide your analysis and suggest any adjustments to improve the game experience.
 
@@ -218,11 +265,9 @@ export async function analyzeGameConfig(config: object): Promise<LlmFeedback> {
         ]
       }
 
-      where analysis is a one sentence of your evaluation, and suggested_actions is an array of up to 3 specific recommendations for improving the level's balance.
-
+      where analysis is one sentence of your evaluation, and suggested_actions is an array of up to 3 specific recommendations for improving the level's balance.
 
       If you think the configuration is well balanced, return "no actions needed" in the suggested_actions array.
-
 
     Configuration:
     ${JSON.stringify(config, null, 2)}

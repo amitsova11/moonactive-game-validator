@@ -14,14 +14,14 @@ type ProviderErrorPayload = {
 function extractProviderErrorPayload(error: unknown): ProviderErrorPayload | null {
   const rawMessage = error instanceof Error ? error.message : String(error);
 
-  const jsonStart = rawMessage.indexOf("{");
-  const jsonEnd = rawMessage.lastIndexOf("}");
-  if (jsonStart < 0 || jsonEnd <= jsonStart) {
+  // Use regex to safely find JSON object, avoiding indexOf/lastIndexOf injection
+  const jsonMatch = rawMessage.match(/\{[^{}]*(?:"error"[^{}]*)*\}/i);
+  if (!jsonMatch) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(rawMessage.slice(jsonStart, jsonEnd + 1)) as ProviderErrorPayload;
+    const parsed = JSON.parse(jsonMatch[0]) as ProviderErrorPayload;
     if (parsed && typeof parsed === "object" && "error" in parsed) {
       return parsed;
     }
